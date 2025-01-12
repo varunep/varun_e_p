@@ -1,0 +1,157 @@
+============== Redshift Schema Design================
+
+++++++++++++++++++++++++++Raw Data Table (for auditing and troubleshooting):
+
+CREATE TABLE raw_data (
+    mac_id VARCHAR(128),
+    datetime TIMESTAMP,
+    channel_name VARCHAR(256),
+    program_id VARCHAR(64),
+    geo_location VARCHAR(128),
+    event_code VARCHAR(16),
+    satellite_name VARCHAR(64),
+    event_ts BIGINT,
+    indextime TIMESTAMP 
+    duration_in_seconds BIGINT
+)
+DISTSTYLE EVEN
+SORTKEY (datetime);
+
+
++++++++++++++++++++++++++++++++ Downstream Table (minute-by-minute user viewership data):
+
+
+CREATE TABLE downstream_viewership (
+    mac_id VARCHAR(128),
+    datetime TIMESTAMP,
+    channel_name VARCHAR(256),
+    program_name VARCHAR(256),
+    program_genre VARCHAR(128)
+)
+DISTSTYLE KEY
+DISTKEY (channel_name)
+SORTKEY (datetime);
+
+
+Distributed storage and sorting improve scan and join efficiency.
+Materialized views provide faster aggregation retrievals.
+
+Scalability:
+Redshift’s MPP architecture handles millions of records daily.
+Efficient data distribution and compression reduce processing time.
+
+
+Partition Data: Ensure PySpark writes partitioned data into Redshift.
+Concurrency: Use multiple Redshift connections for parallel writes.
+
+
+
+
+++++++++++++Aggregated Viewership Hours by Channel:+++++++++
+
+CREATE MATERIALIZED VIEW viewership_hours AS
+SELECT
+    channel_name,
+    DATE(datetime) AS date,
+    SUM(duration_in_seconds) / 3600 AS total_viewership_hours
+FROM
+    raw_data
+GROUP BY
+    channel_name, DATE(datetime)
+ORDER BY
+    total_viewership_hours DESC;
+
+
+                      results
+
+--------------------+----------+----------------------+
+|        channel_name|      date|total_viewership_hours|
++--------------------+----------+----------------------+
+|            SSC 1 HD|2024-01-07|    27.514444444444443|
+|        GOBX Marhaba|2024-01-07|    27.016111111111112|
+|          MBC Action|2024-01-07|    24.087222222222223|
+|             MBC1 HD|2024-01-07|     23.83361111111111|
+|          Saudi 1 HD|2024-01-07|    12.943055555555556|
+|          Al Arabiya|2024-01-07|    10.601944444444445|
+|                MBC1|2024-01-07|     9.651111111111112|
+|                NULL|2024-01-07|     8.508055555555556|
+|SAUDI CH For Qura...|2024-01-07|    7.1241666666666665|
+|           MBC Drama|2024-01-07|     4.979444444444445|
+|SAUDI CH For Sunn...|2024-01-07|                3.5025|
+|                MBC3|2024-01-07|    3.0580555555555557|
+|            MBC IRAQ|2024-01-07|    2.6216666666666666|
+|            SSC 5 HD|2024-01-07|     2.347777777777778|
+|      Al Nahar Drama|2024-01-07|    1.9813888888888889|
+|             MBC2 HD|2024-01-07|     1.331388888888889|
+|      MBC+ Drama  HD|2024-01-07|    0.6788888888888889|
+|              SBC HD|2024-01-07|    0.5208333333333334|
+|         ALSahraa HD|2024-01-07|    0.3333333333333333|
+|                MBC2|2024-01-07|                  0.22|
++--------------------+----------+----------------------+
+
+
+
++++++++++++++++++++++++++++++++++++ Average viewing duration per user.++++++++++++++++
+
+CREATE MATERIALIZED VIEW Average_viewing_duration_per_user AS
+SELECT
+    mac_id,
+    (AVG(duration_in_seconds) / 60) AS avg_viewing_duration_minutes
+FROM
+    raw_data
+GROUP BY
+    mac_id
+ORDER BY
+    avg_viewing_duration_minutes DESC
+
+
+                          results
+
++--------------------+----------------------------+
+|              mac_id|avg_viewing_duration_minutes|
++--------------------+----------------------------+
+|b0431ae993eb38086...|          14.039690721649485|
+|d0ebccafea584c061...|           9.934143518518518|
+|4136b85db09a646f2...|           9.930555555555555|
+|4de5d928230506096...|           9.930555555555555|
+|917c4b6d7f2205b26...|           9.930555555555555|
+|bda326f89bce77e65...|           9.069166666666666|
+|50d36e864595f192a...|            8.75977011494253|
+|847a8a2ebff35d50d...|           8.578958333333333|
+|87cf2fb93c9b2b05b...|           7.900177304964539|
+|852489d2471301cbe...|           4.708543417366946|
++--------------------+----------------------------+
+
+
+++++++++++++++Top 10 Channels by Viewership:++++++++++++
+
+CREATE MATERIALIZED VIEW top_channels AS
+with cte as(SELECT
+    channel_name,
+    DATE(datetime) AS view_date,
+    SUM(duration_in_seconds) AS total_viewership_seconds,
+    dense_rank() OVER (PARTITION BY DATE(datetime) ORDER BY SUM(duration_in_seconds) DESC) AS rank
+FROM
+    raw_data
+GROUP BY
+    channel_name, DATE(datetime)
+)
+select * from cte where rank <= 10
+ORDER BY rank
+
+                         results
+
++--------------------+----------+------------------------+----+
+|        channel_name| view_date|total_viewership_seconds|rank|
++--------------------+----------+------------------------+----+
+|            SSC 1 HD|2024-01-07|                   99052|   1|
+|        GOBX Marhaba|2024-01-07|                   97258|   2|
+|          MBC Action|2024-01-07|                   86714|   3|
+|             MBC1 HD|2024-01-07|                   85801|   4|
+|          Saudi 1 HD|2024-01-07|                   46595|   5|
+|          Al Arabiya|2024-01-07|                   38167|   6|
+|                MBC1|2024-01-07|                   34744|   7|
+|                NULL|2024-01-07|                   30629|   8|
+|SAUDI CH For Qura...|2024-01-07|                   25647|   9|
+|           MBC Drama|2024-01-07|                   17926|  10|
++--------------------+----------+------------------------+----+

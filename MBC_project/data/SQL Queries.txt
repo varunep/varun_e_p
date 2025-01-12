@@ -1,0 +1,101 @@
+
+
+
+++++++++++++++++++++++++++++++++ SQL Query Reach and TRPs by Channel names ++++++++++++++
+
+WITH daily_viewers AS (
+    SELECT
+        DATE(datetime) AS view_date,
+        COUNT(DISTINCT mac_id) AS total_daily_viewers
+    FROM
+        raw_data
+    GROUP BY
+        DATE(datetime)
+),
+channel_reach AS (
+    SELECT
+        channel_name,
+        DATE(datetime) AS view_date,
+        COUNT(DISTINCT mac_id) AS unique_channel_viewers
+    FROM
+        raw_data
+    GROUP BY
+        channel_name, DATE(datetime)
+),
+minute_ratings AS (
+    SELECT
+        channel_name,
+        DATE(datetime) AS view_date,
+        datetime AS view_time,
+        COUNT(DISTINCT mac_id) AS unique_minute_viewers
+    FROM
+        raw_data
+    GROUP BY
+        channel_name, DATE(datetime), datetime
+),
+reach_trp_calculation AS (
+    SELECT
+        cr.channel_name,
+        cr.view_date,
+        cr.unique_channel_viewers * 1.0 / dv.total_daily_viewers AS reach,
+        mr.view_time,
+        mr.unique_minute_viewers * 1.0 / dv.total_daily_viewers AS rating
+    FROM
+        channel_reach cr
+    JOIN
+        daily_viewers dv ON cr.view_date = dv.view_date
+    JOIN
+        minute_ratings mr ON cr.channel_name = mr.channel_name AND cr.view_date = mr.view_date
+),
+final_trp AS (
+    SELECT
+        channel_name,
+        view_date,
+        reach,
+        SUM(rating) AS trp
+    FROM
+        reach_trp_calculation
+    GROUP BY
+        channel_name, view_date, reach
+)
+SELECT
+    channel_name,
+    view_date,
+    reach,
+    trp
+FROM
+    final_trp
+ORDER BY
+    view_date, trp DESC
+
+                               results
+
+-------------------+----------+------------------+-------------------+
+|        channel_name| view_date|             reach|                trp|
++--------------------+----------+------------------+-------------------+
+|            SSC 1 HD|2024-01-07|0.2000000000000000|16.8000000000000000|
+|        GOBX Marhaba|2024-01-07|0.4000000000000000|16.1000000000000000|
+|          MBC Action|2024-01-07|0.5000000000000000|15.4000000000000000|
+|             MBC1 HD|2024-01-07|0.2000000000000000|14.5000000000000000|
+|          Saudi 1 HD|2024-01-07|0.1000000000000000| 8.3000000000000000|
+|          Al Arabiya|2024-01-07|0.4000000000000000| 6.9000000000000000|
+|                MBC1|2024-01-07|0.4000000000000000| 4.8000000000000000|
+|           MBC Drama|2024-01-07|0.3000000000000000| 4.0000000000000000|
+|                MBC3|2024-01-07|0.2000000000000000| 2.9000000000000000|
+|SAUDI CH For Sunn...|2024-01-07|0.1000000000000000| 2.5000000000000000|
+|SAUDI CH For Qura...|2024-01-07|0.1000000000000000| 2.4000000000000000|
+|            MBC IRAQ|2024-01-07|0.2000000000000000| 1.9000000000000000|
+|            SSC 5 HD|2024-01-07|0.1000000000000000| 1.6000000000000000|
+|      Al Nahar Drama|2024-01-07|0.1000000000000000| 1.3000000000000000|
+|                MBC2|2024-01-07|0.3000000000000000| 0.9000000000000000|
+|                MBC4|2024-01-07|0.3000000000000000| 0.9000000000000000|
+|             MBC2 HD|2024-01-07|0.1000000000000000| 0.9000000000000000|
+|      MBC+ Drama  HD|2024-01-07|0.1000000000000000| 0.7000000000000000|
+|             MBC MAX|2024-01-07|0.3000000000000000| 0.7000000000000000|
+|              SBC HD|2024-01-07|0.1000000000000000| 0.5000000000000000|
++--------------------+----------+------------------+-------------------+
+
+
+
+
+
