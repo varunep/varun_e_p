@@ -41,10 +41,6 @@ Redshift’s MPP architecture handles millions of records daily.
 Efficient data distribution and compression reduce processing time.
 
 
-Partition Data: Ensure PySpark writes partitioned data into Redshift.
-Concurrency: Use multiple Redshift connections for parallel writes.
-
-
 
 
 ++++++++++++Aggregated Viewership Hours by Channel:+++++++++
